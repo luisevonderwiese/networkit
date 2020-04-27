@@ -105,8 +105,414 @@ class BucketQueue {
 	}
 	
 	
+};
+
+class NaiveUnionFind {
+	std::vector<node> representative;
+	
+public:
+	NaiveUnionFind (count n){
+		representative =  std::vector<node>(n, none);
+	}
+	
+	node find (node x) {
+		if(representative[x] == none){
+			return x;
+		} else {
+			return find(representative[x]);
+		}
+	}
+	
+	void unionNaive(node u, node v){
+		representative[find(u)] = find(v);
+	}
+
+	
+};
+class SimplePathState {
+	std::vector<count> path_membership;
+	std::vector<count> pos;
+	std::vector<std::vector<node>> paths;
+	std::vector<count> neighborCount;
+	std::vector<count> pathLength;
+	std::stack<count> freeList;
+	bool isSorted;
+	
+	
+	
+	//does not maintain sorting
+	void moveToPath(node u, count newPathId){
+		count oldPathId = path_membership[u];
+		assert(oldPathId != newPathId);
+		count oldPos = pos[u];
+		assert(pathLength[oldPathId] > oldPos);
+		pathLength[oldPathId] -= 1;
+		bool isNeighbor = oldPos < neighborCount[oldPathId];
+		if(isNeighbor){
+			neighborCount[oldPathId] -=1;
+			node lastNeighbor = paths[oldPathId][neighborCount[oldPathId]];
+			if(lastNeighbor != u){
+				pos[u] = pos[lastNeighbor];
+				paths[oldPathId][pos[lastNeighbor]] = u;
+				pos[lastNeighbor] = oldPos;
+				paths[oldPathId][oldPos] = lastNeighbor;	
+				oldPos = pos[u];
+			}
+		}
+		node lastNode = paths[oldPathId][pathLength[oldPathId]];
+		if(lastNode != u){
+			assert(pathLength[oldPathId] > 0);
+			pos[lastNode] = pos[u];
+			paths[oldPathId][pos[u]] = lastNode;	
+		} else if(pathLength[oldPathId] == 0){
+			freeList.push(oldPathId);	
+		}
+		count newPos = pathLength[newPathId];
+		if(isNeighbor){
+			if(neighborCount[newPathId] != pathLength[newPathId]){
+				newPos = neighborCount[newPathId];
+				node firstNonNeighbor = paths[newPathId][newPos];
+				pos[firstNonNeighbor] = pathLength[newPathId];
+				paths[newPathId][pathLength[newPathId]] = firstNonNeighbor;
+			}
+			neighborCount[newPathId] += 1;
+		}
+		paths[newPathId][newPos] = u;
+		pathLength[newPathId] += 1;	
+		pos[u] = newPos;
+		path_membership[u] = newPathId;
+
+	}
+	
+	void findSimplePathsBelow(node u, DynamicForest dynamicForest, NaiveUnionFind* uf){
+		std::vector<node> children = dynamicForest.children(u);
+		if(children.size() == 1 && u != none){
+			uf->unionNaive(children[0], u);
+		}
+		for(node child : children){
+			findSimplePathsBelow(child, dynamicForest, uf);
+		}
+	}
+	
+	std::string printPath(count pathId){
+		std::stringstream ss;
+		if(pathLength[pathId] > 0){
+			std::vector<node> path = paths[pathId];
+			if(neighborCount[pathId] == 0){
+				ss << " [|" << path[0];
+			} else {
+				ss << " [" << path[0];
+			}
+			for (count j = 1; j < pathLength[pathId]; j++){
+				if(neighborCount[pathId] == j){
+					ss << ",| " << path[j];
+				} else {
+					ss << ", " << path[j];
+				}
+			}
+			if(pathLength[pathId] == 1 && neighborCount[pathId] == 1){
+				ss << "|]";
+			} else {
+				ss << "]";
+			}
+		}
+		return ss.str();
+	}
+	
+	bool isProper(){
+		for(count p = 0; p < paths.size(); p++){
+			assert(neighborCount[p] <= pathLength[p]);
+			std::vector<node> path =  paths[p];
+			for(int i = 0; i < pathLength[p]; i++){
+				node u = path[i];
+				if(u == none){
+					return false;
+				}
+				if(path_membership[u] != p){
+					return false;
+				}
+				if(pos[u] != i){
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+	
+	
+public:
+	
+	SimplePathState(count n) {
+		path_membership = std::vector<count>(n);
+		pos = std::vector<count>(n);
+		paths = std::vector<std::vector<node>>(n, std::vector<node>(n, none));
+		neighborCount = std::vector<count>(n, 0);
+		pathLength = std::vector<count>(n, 1);
+		freeList = std::stack<count>();
+		for (node i = 0; i < n; i++){
+			path_membership[i] = i;
+			pos[i] = 0;
+			paths[i][0] = i;
+		}
+		assert(isProper());
+
+	}
+	
+	SimplePathState(DynamicForest dynamicForest, count n){
+		NaiveUnionFind uf(n);
+		std::vector<node> roots;
+		
+		for(node i = 0; i < n; i++){
+			if(dynamicForest.parent(i) == none){
+				roots.push_back(i);
+			}
+		}
+		
+		for(node root : roots) {
+			findSimplePathsBelow(root, dynamicForest, &uf);
+		}
+		
+		
+		
+		path_membership = std::vector<count>(n);
+		pos = std::vector<count>(n);
+		paths = std::vector<std::vector<node>>(n, std::vector<node>(n, none));
+		neighborCount = std::vector<count>(n, 0);
+		pathLength = std::vector<count>(n, 0);
+		freeList = std::stack<count>();
+		for (node u = 0; u < n; u++){
+			count currentPathId = (count) uf.find(u);
+			count currentPos = pathLength[currentPathId];
+			path_membership[u] = currentPathId;
+			pos[u] = currentPos;
+			paths[currentPathId][currentPos] = u;
+			pathLength[currentPathId] += 1;
+		}
+		
+		
+		for (count i = 0; i < n; i++){
+			if (pathLength[i] == 0){
+				freeList.push(i);
+			}
+		}
+		
+		for (node u = 0; u < n; u++){
+			node parent = dynamicForest.parent(u);
+			if(parent != none && dynamicForest.children(parent).size() == 1){
+				assert(simplePath(u) ==  simplePath(parent));
+			}
+		}
+		
+		for(count p = 0; p < n; p++){
+			if(pathLength[p] > 0){
+				bool lastNode = 0;
+				for(count i = 0; i < pathLength[p] - 1; i++){
+					if(!lastNode && dynamicForest.children(paths[p][i]).size() != 1){
+						lastNode = 1;
+					} else {
+						assert(dynamicForest.children(paths[p][i]).size() == 1);
+					}				
+				}
+				}
+			}
+		assert(isProper());
+		
+	}
+	
+	std::string printPaths(){
+		std::stringstream ss;
+		ss << "Simple Paths:";
+		for (count i = 0; i < paths.size(); i++){
+			ss << printPath(i);
+		}
+		return ss.str();
+	}
+	
+	
+	
+	void resetSorting() {
+		std::fill(neighborCount.begin(), neighborCount.end(), 0);
+	}
+	
+	void moveUp (node u) {
+		count currentPathId = path_membership[u];
+		count currentPos = pos[u];
+		count nextPos = neighborCount[currentPathId];
+		assert(nextPos < pathLength[currentPathId]);
+		if(currentPos < nextPos) {
+			//neighbor already counted and moved
+			return;
+		} else if (currentPos > nextPos) {
+			node temp = paths[currentPathId][nextPos];
+			assert(path_membership[temp] == path_membership[u]);
+			pos[temp] = currentPos;
+			pos[u] = nextPos;
+			paths[currentPathId][currentPos] = temp;
+			paths[currentPathId][nextPos] = u;
+		}
+		//in case of equality, only counter needs to be updated
+		neighborCount[currentPathId]+=1;
+		assert(isProper());
+		
+	}
+	
+	void splitPathOf(node u) {
+		count pathId = path_membership[u];
+		count neighbors = neighborCount[pathId];
+		count nonNeighbors = pathLength[pathId] - neighborCount[pathId];
+		//nothing to split
+		if(neighbors == 0 || nonNeighbors == 0 || pathLength[pathId] < 2){
+			return;
+		}
+		INFO("Split path of ", u);
+		count newPathId = freeList.top();
+		assert(pathLength[newPathId] == 0);
+		freeList.pop();
+		for(int i = 0; i < neighbors; i++){
+			node u = paths[pathId][0];
+			assert(path_membership[u] == pathId);
+			moveToPath(u, newPathId);
+			assert(path_membership[u] == newPathId);
+		}
+		assert(pathLength[newPathId] ==  neighbors);
+		assert(pathLength[pathId] == nonNeighbors);
+		assert(isProper());
+	}
+	
+	void splitPathAfter(node u) {
+		count pathId = path_membership[u];
+		count splitPos = pos[u] + 1;
+		count nonNeighbors = pathLength[pathId] - neighborCount[pathId];
+		count l = pathLength[pathId];
+		//nothing to split
+		if(splitPos == l || l < 2){
+			return;
+		}
+		INFO("Split path after ", u);
+		count newPathId = freeList.top();
+		assert(pathLength[newPathId] == 0);
+		freeList.pop();
+		for(int i = splitPos; i < l; i++){
+			node u = paths[pathId][splitPos];
+			assert(path_membership[u] == pathId);
+			moveToPath(u, newPathId);
+			assert(path_membership[u] == newPathId);
+		}
+		assert(isProper());
+	}
+	
+	void unionPathsOf(node u, node v) {
+		isSorted = 0;
+		count secondPathId = path_membership[v];
+		count firstPathId = path_membership[u];
+		assert(pathLength[firstPathId] > 0);
+		assert(pathLength[secondPathId] > 0);
+		count sum = pathLength[firstPathId] + pathLength[secondPathId];
+		if(firstPathId == secondPathId){
+			return;
+		}
+		INFO("Union paths of ", u, " and ", v);
+		count elementsToMove = pathLength[firstPathId];
+		
+		for (count i = 0; i < elementsToMove; i++) {
+			node w = paths[firstPathId][0];
+			assert(firstPathId == path_membership[w]);
+			assert(pathLength[firstPathId] > 0 && pathLength[secondPathId] > 0);
+			moveToPath(w, secondPathId);
+			assert(path_membership[w] == secondPathId);
+		}
+		assert(pathLength[firstPathId] == 0);
+		assert(pathLength[secondPathId] == sum);
+		assert(isProper());
+		
+	}
+	
+	void isolate(node u) {
+		count oldPathId = path_membership[u];
+		count length = pathLength[oldPathId];
+		if(length > 1){
+			INFO("Isolate ", u);
+			count newPathId = freeList.top();
+			assert(pathLength[newPathId] == 0);
+			freeList.pop();
+			moveToPath(u, newPathId);
+			assert(pathLength[newPathId] == 1);
+			assert(pathLength[oldPathId] == (length - 1));
+		}
+		assert(isProper());
+		
+		
+	}
+	
+	bool equals (SimplePathState other){
+		assert(isProper());
+		assert(other.isProper());
+		if(other.upperNodeIdBound() != paths.size()){
+			return 0;
+		}
+		for(count p = 0; p < paths.size(); p++){
+			if(pathLength[p] > 0){
+				std::vector<node> thisPath(&paths[p][0],&paths[p][pathLength[p]]);
+				std::vector<node> otherPath = other.simplePath(thisPath[0]);
+				std::sort(thisPath.begin(), thisPath.end(), [](const node & a, const node & b) -> bool
+				{ return (long) a < (long) b; });
+				std::sort(otherPath.begin(), otherPath.end(), [](const node & a, const node & b) -> bool
+				{ return (long) a < (long) b; });
+				if(thisPath != otherPath){
+					INFO("Unequal paths ", thisPath, " and ", otherPath);
+					return 0;
+				}
+			}
+		}
+		return 1;
+	}
+	
+	
+	std::vector<node> simplePath(node u){
+		count pathId = path_membership[u];
+		std::vector<node> result(&paths[pathId][0],&paths[pathId][pathLength[pathId]]);
+		return result;
+	}
+	
+	count upperNodeIdBound(){
+		return paths.size();
+	}
+	
+	DynamicForest reorderForest(DynamicForest dynamicForest){
+		DynamicForest updatedForest = dynamicForest;
+		assert(equals(SimplePathState(dynamicForest, paths.size())));
+		for(count p = 0; p < paths.size(); p++){
+			count l = pathLength[p];
+			if(l > 1){
+				for(count i = 0; i < l; i++){
+					node u = paths[p][i];
+					//u was first vertex in old ordering
+					if(dynamicForest.parent(u) == none || dynamicForest.children(dynamicForest.parent(u)).size() != 1){
+						updatedForest.setParent(paths[p][0], dynamicForest.parent(u));
+					}
+					//u was last vertex in old ordering
+					if(dynamicForest.children(u).size() != 1){
+						for(node child : dynamicForest.children(u)){
+							updatedForest.setParent(child, paths[p][l - 1]);
+						}
+					}
+					if(i > 0){
+						updatedForest.setParent(u, paths[p][i-1]);
+					}
+				}
+			}
+		}
+		
+
+		/*INFO(printPaths());
+		SimplePathState simplePathResults(updatedForest, paths.size());
+		INFO(simplePathResults.printPaths());
+		assert(equals(simplePathResults));*/
+		return updatedForest;
+	}
+	
 };  
-} 
+}
 
 
 
@@ -167,6 +573,7 @@ void NetworKit::QuasiThresholdEditingLocalMover::run() {
 	handler.assureRunning();
 
 	NetworKit::BucketQueue bucketQueue(G.upperNodeIdBound());
+	NetworKit::SimplePathState simplePaths(dynamicForest, G.upperNodeIdBound());
 	std::vector<node> neighbors, currentLevel, touchedNodes, lastVisitedDFSNode(G.upperNodeIdBound(), none), bestParentBelow(G.upperNodeIdBound(), none);
 	G.parallelForNodes([&](node u) {
 		lastVisitedDFSNode[u] = u;
@@ -180,15 +587,25 @@ void NetworKit::QuasiThresholdEditingLocalMover::run() {
 
 		G.forNodesInRandomOrder([&](node nodeToMove) {
 			handler.assureRunning();
+			simplePaths.resetSorting();
 			G.forEdgesOf(nodeToMove, [&](node v) {
 				marker[v] = true;
+				simplePaths.moveUp(v);
 			});
+			simplePaths.moveUp(nodeToMove);
+			dynamicForest = simplePaths.reorderForest(dynamicForest);
 
 			// remove the node from its tree but store the old position.
 			std::vector<node> curChildren(dynamicForest.children(nodeToMove));
 			node curParent = dynamicForest.parent(nodeToMove);
 			count curEdits = G.degree(nodeToMove);
 
+			std::fill(depth.begin(), depth.end(), 0);
+			dynamicForest.dfsFrom(none, [&](node c) {
+				if (c != none && dynamicForest.parent(c) != none) {
+					depth[c] = depth[dynamicForest.parent(c)] + 1;
+				}
+			}, [](node){});
 			dynamicForest.dfsFrom(nodeToMove, [&](node c) {
 				--depth[c];
 				if (c != nodeToMove) {
@@ -199,8 +616,10 @@ void NetworKit::QuasiThresholdEditingLocalMover::run() {
 			for (node p = dynamicForest.parent(nodeToMove); p != none; p = dynamicForest.parent(p)) {
 				curEdits += 1 - 2 * marker[p];
 			}
-
+			
+			
 			dynamicForest.isolate(nodeToMove);
+			
 
 			depth[nodeToMove] = 0;
 
@@ -484,6 +903,7 @@ void NetworKit::QuasiThresholdEditingLocalMover::run() {
 			});
 
 			if (moveSubtrees) {
+				
 				dynamicForest.setParent(nodeToMove, curParent);
 				for (node c : curChildren) {
 					dynamicForest.setParent(c, nodeToMove);
@@ -578,9 +998,37 @@ void NetworKit::QuasiThresholdEditingLocalMover::run() {
 
 
 			if (savedEdits > 0) {
+				if(curParent != none){
+					simplePaths.splitPathAfter(curParent);
+				}
+				if(bestParent != none) {
+					simplePaths.splitPathAfter(bestParent);
+				}
 				if (!moveWithSubtree) {
 					dynamicForest.isolate(nodeToMove);
+					
+					//isolate from simple path
+					simplePaths.splitPathAfter(nodeToMove);
+					std::vector<node> leftBack = dynamicForest.children(curParent);
+					if(leftBack.size() == 1 && curParent != none && curParent != bestParent){
+						INFO("Union old paths");
+						simplePaths.unionPathsOf(leftBack[0], curParent);
+					}
 				}
+				
+				count childNumber = dynamicForest.children(bestParent).size();
+				//all children are adopted (or best parent was leaf before)
+				if(bestParent != none && childNumber == bestChildren.size()){
+					INFO("Union with parent");
+				  simplePaths.unionPathsOf(nodeToMove, bestParent);
+				}
+
+				//exactly one child is adopted
+				if(bestChildren.size() == 1 && !moveWithSubtree){
+					INFO("Union with child");
+				  simplePaths.unionPathsOf(bestChildren[0], nodeToMove);
+				}
+
 				dynamicForest.setParent(nodeToMove, bestParent);
 				for (node c : bestChildren) {
 					dynamicForest.setParent(c, nodeToMove);
@@ -591,10 +1039,16 @@ void NetworKit::QuasiThresholdEditingLocalMover::run() {
 
 #ifndef NDEBUG
 				forest = dynamicForest.toGraph();
+				if(numEdits!=countNumberOfEdits()){
+					INFO("Num edits ", numEdits);
+					INFO("Counted ", countNumberOfEdits());
+				}
 				assert(numEdits == countNumberOfEdits());
 #endif
 			} else if (!moveSubtrees) {
+
 				dynamicForest.setParent(nodeToMove, curParent);
+			
 				for (node c : curChildren) {
 					dynamicForest.setParent(c, nodeToMove);
 				}
@@ -607,6 +1061,25 @@ void NetworKit::QuasiThresholdEditingLocalMover::run() {
 					depth[c] = 0;
 				}
 			}, [](node){});
+			
+		if(savedEdits > 0){
+			INFO("Moved node ", nodeToMove, " from parent ", curParent, " to ", bestParent);
+			if(moveWithSubtree){
+				INFO("Adopted children ", bestChildren, " kept children ", curChildren);
+			} else {
+				INFO("Adopted children ", bestChildren, " discarded children ", curChildren);
+			}
+		} else {
+			INFO("Do not move ", nodeToMove);
+		}
+
+		
+		INFO(simplePaths.printPaths());
+		INFO("*****************************************************************");
+			
+		SimplePathState treePaths(dynamicForest, G.upperNodeIdBound());
+		assert(simplePaths.equals(treePaths));
+		//simplePaths = treePaths;
 		});
 
 		usedIterations = i+1;
@@ -614,6 +1087,11 @@ void NetworKit::QuasiThresholdEditingLocalMover::run() {
 
 	forest = dynamicForest.toGraph();
 
+
+	if(numEdits!=countNumberOfEdits()){
+		INFO("Num edits ", numEdits);
+		INFO("Counted ", countNumberOfEdits());
+	}
 	assert(numEdits == countNumberOfEdits());
 }
 
